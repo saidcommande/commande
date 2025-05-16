@@ -1,4 +1,5 @@
-import os
+            
+    import os
 import pdfplumber
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -9,11 +10,19 @@ from kivy.uix.popup import Popup
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.filechooser import FileChooserListView
 from kivy.metrics import dp
+from kivy.utils import platform
 from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4  # Changé pour format A4
-from reportlab.lib.units import cm  # Utilisation des centimètres
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
 from datetime import datetime
+
+# Pour Android
+if platform == 'android':
+    from android.permissions import request_permissions, Permission
+    from android.storage import app_storage_path
+
 
 class ArticleSelectionPopup(Popup):
     def __init__(self, article, prix, callback, **kwargs):
@@ -58,8 +67,48 @@ class ArticleSelectionPopup(Popup):
             self.quantite_input.hint_text = "Quantité invalide!"
             self.quantite_input.text = ""
 
+
+class PDFChooserPopup(Popup):
+    def __init__(self, callback, **kwargs):
+        super().__init__(**kwargs)
+        self.callback = callback
+        self.title = "Sélectionner le fichier PDF"
+        self.size_hint = (0.9, 0.9)
+        
+        layout = BoxLayout(orientation='vertical')
+        
+        self.file_chooser = FileChooserListView(
+            filters=['*.pdf'],
+            size_hint=(1, 0.9)
+        )
+        
+        btn_box = BoxLayout(size_hint_y=None, height=dp(50))
+        btn_cancel = Button(text="Annuler")
+        btn_select = Button(text="Sélectionner", background_color=(0.2, 0.6, 1, 1))
+        
+        btn_cancel.bind(on_press=self.dismiss)
+        btn_select.bind(on_press=self.select_file)
+        
+        btn_box.add_widget(btn_cancel)
+        btn_box.add_widget(btn_select)
+        
+        layout.add_widget(self.file_chooser)
+        layout.add_widget(btn_box)
+        
+        self.content = layout
+    
+    def select_file(self, instance):
+        if self.file_chooser.selection:
+            self.callback(self.file_chooser.selection[0])
+            self.dismiss()
+
+
 class CommandeApp(App):
     def build(self):
+        # Demander les permissions sur Android
+        if platform == 'android':
+            request_permissions([Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE])
+        
         self.articles = []
         self.selection = []
         self.all_articles = []
@@ -168,8 +217,11 @@ class CommandeApp(App):
             self.liste_articles.add_widget(Label(text=prix, font_size=16))
     
     def charger_articles(self, instance):
-        pdf_path = "C:\\Users\\said\\OneDrive\\Bureau\\articles.pdf"
-        
+        # Ouvrir le sélecteur de fichiers
+        popup = PDFChooserPopup(callback=self.process_pdf)
+        popup.open()
+    
+    def process_pdf(self, pdf_path):
         try:
             with pdfplumber.open(pdf_path) as pdf:
                 self.articles = []
@@ -217,37 +269,30 @@ class CommandeApp(App):
             self.show_popup("Erreur", "Aucun article sélectionné")
             return
         
-        dossier_commandes = "COMMANDE AKASYA"
+        # Créer le dossier de commandes
+        if platform == 'android':
+            dossier_commandes = os.path.join(app_storage_path(), "COMMANDE_AKASYA")
+        else:
+            dossier_commandes = "COMMANDE_AKASYA"
+            
         if not os.path.exists(dossier_commandes):
             os.makedirs(dossier_commandes)
         
         nom_client = self.nom_client.text.strip().replace(" ", "_")
         date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        pdf_filename = f"{dossier_commandes}/COMMANDT_{nom_client}_{date_str}.pdf"
+        pdf_filename = os.path.join(dossier_commandes, f"COMMANDE_{nom_client}_{date_str}.pdf")
         
         try:
-            # Format A4 avec marges en cm
+            # Création du PDF
             c = canvas.Canvas(pdf_filename, pagesize=A4)
             width, height = A4
             
-            # Marges
+            # Configuration du document
             left_margin = 2 * cm
             top_margin = 2 * cm
             right_margin = 2 * cm
             
-            # Calcul des largeurs de colonnes
-            max_article_width = max([len(article) for article, _, _ in self.selection] + [6])  # 6 = "Article"
-            max_prix_width = max([len(prix) for _, prix, _ in self.selection] + [9])  # 9 = "Prix Unit."
-            max_qte_width = 5  # "Quantité"
-            max_total_width = 10  # "Total DH"
-            
-            # Définition des positions des colonnes
-            col_article = left_margin
-            col_prix = col_article + (max_article_width * 0.3 * cm)
-            col_qte = col_prix + (max_prix_width * 0.3 * cm)
-            col_total = col_qte + (max_qte_width * 0.5 * cm)
-            
-            # En-tête du document
+            # En-tête
             c.setFont("Helvetica-Bold", 16)
             c.drawString(left_margin, height - top_margin, "COMMANDE AKASYA")
             c.setFont("Helvetica", 12)
@@ -256,6 +301,12 @@ class CommandeApp(App):
             
             # Ligne de séparation
             c.line(left_margin, height - top_margin - 2*cm, width - right_margin, height - top_margin - 2*cm)
+            
+            # Colonnes
+            col_article = left_margin
+            col_prix = col_article + 10 * cm
+            col_qte = col_prix + 2 * cm
+            col_total = col_qte + 2 * cm
             
             # En-têtes de colonnes
             c.setFont("Helvetica-Bold", 12)
@@ -268,28 +319,25 @@ class CommandeApp(App):
             # Ligne sous les en-têtes
             c.line(left_margin, y_position - 0.3*cm, width - right_margin, y_position - 0.3*cm)
             
-            # Contenu des articles
+            # Articles
             c.setFont("Helvetica", 11)
             y_position -= 1*cm
             total_general = 0
             
             for article, prix, qte in self.selection:
                 try:
-                    # Nettoyage et conversion du prix
                     prix_clean = prix.replace(' DH', '').replace(',', '.').strip()
                     prix_num = float(prix_clean)
                     total = prix_num * qte
                     total_general += total
                     
-                    # Affichage des données
                     c.drawString(col_article, y_position, article)
-                    c.drawRightString(col_prix + max_prix_width*0.2*cm, y_position, f"{prix_num:.2f} DH")
-                    c.drawRightString(col_qte + max_qte_width*0.2*cm, y_position, str(qte))
-                    c.drawRightString(col_total + max_total_width*0.2*cm, y_position, f"{total:.2f} DH")
+                    c.drawRightString(col_prix + 1*cm, y_position, f"{prix_num:.2f} DH")
+                    c.drawRightString(col_qte + 0.5*cm, y_position, str(qte))
+                    c.drawRightString(col_total + 1*cm, y_position, f"{total:.2f} DH")
                     
                     y_position -= 0.7*cm
                     
-                    # Saut de page si nécessaire
                     if y_position < 2*cm:
                         c.showPage()
                         y_position = height - top_margin - 1*cm
@@ -298,13 +346,11 @@ class CommandeApp(App):
                 except ValueError:
                     continue
             
-            # Ligne de total
+            # Total
             c.line(left_margin, y_position - 0.5*cm, width - right_margin, y_position - 0.5*cm)
-            
-            # Total général
             c.setFont("Helvetica-Bold", 12)
             c.drawRightString(col_total, y_position - 1*cm, "TOTAL GENERAL:")
-            c.drawRightString(col_total + max_total_width*0.2*cm, y_position - 1*cm, f"{total_general:.2f} DH")
+            c.drawRightString(col_total + 1*cm, y_position - 1*cm, f"{total_general:.2f} DH")
             
             c.save()
             
@@ -329,5 +375,6 @@ class CommandeApp(App):
             size_hint=(0.8, 0.5))
         popup.open()
 
+
 if __name__ == '__main__':
-    CommandeApp().run()
+    CommandeApp().run() 
