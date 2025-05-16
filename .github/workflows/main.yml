@@ -1,75 +1,24 @@
-name: All Builds (Linux, macOS, Windows, Android, IPA, APK, AAB)
-
-on:
-  # Runs on push to any of the below branches
-  push:
-    branches:
-      - master
-      - main
-  # Runs on pull request events that target one of the below branches
-  pull_request:
-    branches:
-      - master
-      - main
-
-  # Allows you to run this workflow manually from the Actions tab of the GitHub UI
-  workflow_dispatch:
-
-env:
-  # TODO Replace with your signing certificate and provisioning profile
-  KEYSTORE_FILE: "keystore.jks"
-  KEYSTORE_ALIAS: "upload"
-  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-  PROVISIONING_PROFILE: "embedded.mobileprovision"
-  CERTIFICATE_P12: "certificate.p12"
-  CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
-
-jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        target: [apk, aab, ipa]
-        exclude:
-          - os: macos-latest
-            target: apk
-          - os: macos-latest
-            target: aab
-          - os: windows-latest
-            target: ipa
-          - os: ubuntu-latest
-            target: ipa
-
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up JDK 11
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '11'
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.x'
-          channel: 'stable'
-      - name: Get dependencies
-        run: flutter pub get
-      - name: Analyze project
-        run: flutter analyze
-      - name: Run tests
-        run: flutter test
-      - name: Build Android
-        if: matrix.target == 'apk' || matrix.target == 'aab'
-        run: flutter build ${{ matrix.target }} --split-per-abi
-      - name: Build iOS
-        if: matrix.target == 'ipa'
-        run: flutter build ipa --export-options-plist=ios/Runner/Info.plist
-      - name: Upload Outputs
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ matrix.os }}-${{ matrix.target }}-build
-          path: build//outputs/${{ matrix.target }}/release/*.${{ matrix.target }}
-          if-no-files-found: ignore
+[app]
+title = Commande Akasya
+package.name = commandeakasya
+package.domain = org.said
+source.dir = .
+source.include_exts = py,png,jpg,kv,ttf
+version = 1.0.0
+requirements = 
+    python3==3.8.10,
+    kivy==2.2.1,
+    pdfplumber==0.10.3,
+    reportlab==4.0.4,
+    pillow==10.1.0,
+    hostpython3==3.8.10
+orientation = portrait
+android.api = 33
+android.minapi = 21
+android.ndk = 23b
+android.sdk = 33
+android.archs = arm64-v8a, armeabi-v7a
+android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE
+android.enable_androidx = true
+android.allow_backup = false
+p4a.branch = master
